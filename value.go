@@ -21,9 +21,11 @@ package goblockly
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Value is the generic value type.
@@ -37,6 +39,8 @@ type Value interface {
 	AsNumber(*Interpreter) float64
 	// Coerce the type to a boolean, or Interpreter.Fail if the coercion cannot be done.
 	AsBoolean(*Interpreter) bool
+	// Coerce the type to a DateTiem, or Interpreter.Fail if the coercion cannot be done.
+	AsDateTime(*Interpreter) time.Time
 	// Coerce the type to a colour, or Interpreter.Fail if the coercion cannot be done.
 	AsColour(*Interpreter) Colour
 	// Coerce the type to a list, or Interpreter.Fail if the coercion cannot be done.
@@ -65,6 +69,11 @@ func (v NilValue) AsNumber(i *Interpreter) float64 {
 func (v NilValue) AsBoolean(i *Interpreter) bool {
 	i.Fail("Nil is not a boolean.")
 	return false
+}
+
+func (v NilValue) AsDateTime(i *Interpreter) time.Time {
+	i.Fail("Nil is not DateTime")
+	return time.Time{}
 }
 
 func (v NilValue) AsColour(i *Interpreter) Colour {
@@ -116,6 +125,11 @@ func (v NumberValue) AsBoolean(i *Interpreter) bool {
 	return float64(v) != 0
 }
 
+func (v NumberValue) AsDateTime(i *Interpreter) time.Time {
+	number := int64(v)
+	return time.UnixMicro(number)
+}
+
 func (v NumberValue) AsColour(i *Interpreter) Colour {
 	i.Fail("Number is not a colour.")
 	return Colour{}
@@ -155,6 +169,15 @@ func (v StringValue) AsNumber(i *Interpreter) float64 {
 
 func (v StringValue) AsBoolean(i *Interpreter) bool {
 	return string(v) != ""
+}
+
+func (v StringValue) AsDateTime(i *Interpreter) time.Time {
+	timeString := string(v)
+	timeValue, err := time.Parse(time.RFC3339, timeString)
+	if err != nil {
+		i.Fail("Can't parse string as time. " + err.Error())
+	}
+	return timeValue
 }
 
 func (v StringValue) AsColour(i *Interpreter) Colour {
@@ -205,6 +228,11 @@ func (v BoolValue) AsNumber(i *Interpreter) float64 {
 
 func (v BoolValue) AsBoolean(i *Interpreter) bool {
 	return bool(v)
+}
+
+func (v BoolValue) AsDateTime(i *Interpreter) time.Time {
+	i.Fail("boolean is not time.")
+	return time.Time{}
 }
 
 func (v BoolValue) AsColour(i *Interpreter) Colour {
@@ -258,6 +286,11 @@ func (v Colour) AsNumber(i *Interpreter) float64 {
 func (v Colour) AsBoolean(i *Interpreter) bool {
 	i.Fail("Colour is not a boolean")
 	return false
+}
+
+func (v Colour) AsDateTime(i *Interpreter) time.Time {
+	i.Fail("Colour is not time.")
+	return time.Time{}
 }
 
 func (v Colour) AsColour(i *Interpreter) Colour {
@@ -333,6 +366,11 @@ func (v List) AsBoolean(i *Interpreter) bool {
 	return false
 }
 
+func (v List) AsDateTime(i *Interpreter) time.Time {
+	i.Fail("List is not time.")
+	return time.Time{}
+}
+
 func (v List) AsColour(i *Interpreter) Colour {
 	i.Fail("List is not a colour.")
 	return Colour{}
@@ -388,4 +426,54 @@ func (v *List) InsertElementAtIndex(i *Interpreter, idx int, element Value) {
 	*v.Values = append(*v.Values, nil)
 	copy((*v.Values)[idx+1:], (*v.Values)[idx:])
 	(*v.Values)[idx] = element
+}
+
+type DateTimeValue time.Time
+
+func (v DateTimeValue) AsString(i *Interpreter) string {
+	return time.Time(v).Format(time.RFC3339)
+}
+
+// AsNumber causes the interpreter to Fail, as booleans cannot be cast to numbers.
+func (v DateTimeValue) AsNumber(i *Interpreter) float64 {
+	i.Fail("DateTime cannot be cast to number.")
+	return 0
+}
+
+func (v DateTimeValue) AsBoolean(i *Interpreter) bool {
+	i.Fail("DateTime cannot be cast to bool.")
+	return false
+}
+
+func (v DateTimeValue) AsColour(i *Interpreter) Colour {
+	i.Fail("DateTime cannot be cast to colour.")
+	return Colour{}
+}
+
+func (v DateTimeValue) AsList(i *Interpreter) List {
+	i.Fail("DateTime is not a list")
+	return List{}
+}
+
+func (v DateTimeValue) AsDateTime(i *Interpreter) time.Time {
+	return time.Time(v)
+}
+
+// Equals returns true if and only if v2 and v are Go equal (meaning they must
+// also be the same type, so "true" != true).
+func (v DateTimeValue) Equals(i *Interpreter, v2 Value) bool {
+	dateTimeValue := v2.(interface{}).(DateTimeValue)
+	return time.Time(v).Equal(time.Time(dateTimeValue))
+}
+
+// IsLessThan returns true if and only if this value is false and v2 (coerced to a boolean) is true.
+func (v DateTimeValue) IsLessThan(i *Interpreter, v2 Value) bool {
+	v1val := time.Time(v)
+	v2val := v2.(interface{}).(DateTimeValue).AsDateTime(i)
+	// order false before true
+	return v1val.Before(v2val)
+}
+
+func (v DateTimeValue) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Time(v).Format(time.RFC3339))
 }
